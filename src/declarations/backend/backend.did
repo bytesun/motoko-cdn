@@ -1,0 +1,50 @@
+type Timestamp = int;
+type FileInfo = 
+ record {
+   chunkCount: nat;
+   createdAt: Timestamp;
+   extension: FileExtension;
+   name: text;
+   size: nat;
+ };
+type FileId__1 = text;
+type FileId = text;
+type FileExtension = 
+ variant {
+   aac;
+   avi;
+   gif;
+   jpeg;
+   jpg;
+   mp3;
+   mp4;
+   png;
+   svg;
+   wav;
+ };
+type FileData = 
+ record {
+   chunkCount: nat;
+   cid: principal;
+   createdAt: Timestamp;
+   extension: FileExtension;
+   fileId: FileId__1;
+   name: text;
+   size: nat;
+   uploadedAt: Timestamp;
+ };
+type Container = 
+ service {
+   getAllFiles: () -> (vec FileData);
+   getFileChunk: (FileId, nat, principal) -> (opt blob);
+   getFileInfo: (FileId, principal) -> (opt FileData);
+   getStatus: () -> (vec record {
+                           principal;
+                           nat;
+                         }) query;
+   putFileChunks: (FileId, nat, nat, blob) -> ();
+   putFileInfo: (FileInfo) -> (opt FileId);
+   updateStatus: () -> ();
+   wallet_receive: () -> ();
+ };
+service : () -> Container

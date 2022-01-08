@@ -42,6 +42,7 @@ module {
     name: Text;
     size: Nat;
     extension: FileExtension;
+    owner: Principal;
   }; 
 
   public type FileData = {
@@ -53,8 +54,16 @@ module {
     name: Text;
     size: Nat;
     extension: FileExtension;
+    owner: Principal;
   };
 
+  public type Uploader = {
+    
+    uploader: Principal;
+    quota: Nat;
+    files: [FileId]
+  };
+  
   public type Map<X, Y> = TrieMap.TrieMap<X, Y>;
 
   public type State = {

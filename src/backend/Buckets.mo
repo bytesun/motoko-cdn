@@ -72,6 +72,7 @@ actor class Bucket () = this {
                                           chunkCount = fi.chunkCount;
                                           size = fi.size ;
                                           extension = fi.extension;
+                                          owner = fi.owner;
                                       }
                   );
                   ?fileId
@@ -111,6 +112,8 @@ actor class Bucket () = this {
             extension = v.extension;
             createdAt = v.createdAt;
             uploadedAt = v.uploadedAt;
+            owner = v.owner;
+
           }
       }
   };

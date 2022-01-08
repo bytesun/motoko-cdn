@@ -10,7 +10,9 @@ import HashMap "mo:base/HashMap";
 import Iter "mo:base/Iter";
 import Blob "mo:base/Blob";
 import Buffer "mo:base/Buffer";
+import Result "mo:base/Result";
 
+ 
 
 // Container actor holds all created canisters in a canisters array 
 // Use of IC management canister with specified Principal "aaaaa-aa" to update the newly 
@@ -76,6 +78,7 @@ shared ({caller = owner}) actor class Container() = this {
   type FileId = Types.FileId;
   type FileInfo = Types.FileInfo;
   type FileData = Types.FileData;
+  type Uploader = Types.Uploader;
 
 // canister info hold an actor reference and the result from rts_memory_size
   type CanisterState<Bucket, Nat> = {
@@ -84,10 +87,12 @@ shared ({caller = owner}) actor class Container() = this {
   };
   // canister map is a cached way to fetch canisters info
   // this will be only updated when a file is added 
-  private let canisterMap = HashMap.HashMap<Principal, Nat>(100, Principal.equal, Principal.hash);
+
+  stable var _canisterMapState : [(Principal, Nat)] = [];
+  private let canisterMap : HashMap.HashMap<Principal, Nat> = HashMap.fromIter(_canisterMapState.vals(), 100, Principal.equal, Principal.hash);
 
 
-  private let canisters : [var ?CanisterState<Bucket, Nat>] = Array.init(10, null);
+  stable var canisters : [var ?CanisterState<Bucket, Nat>] = Array.init(10, null);
   // this is the number I've found to work well in my tests
   // until canister updates slow down 
   //From Claudio:  Motoko has a new compacting gc that you can select to access more than 2 GB, but it might not let you
@@ -102,6 +107,18 @@ shared ({caller = owner}) actor class Container() = this {
   private let cycleShare = 1_000_000_000_000;
 
 
+  stable var _admin = owner;
+  stable var _uploaders : [Uploader] = []; 
+
+  //State functions
+  system func preupgrade() {
+    _canisterMapState := Iter.toArray(canisterMap.entries());
+   
+  };
+  system func postupgrade() {
+    _canisterMapState := [];
+  
+  };
   // dynamically install a new Bucket
   func newEmptyBucket(): async Bucket {
     Cycles.add(cycleShare);
@@ -207,18 +224,111 @@ shared ({caller = owner}) actor class Container() = this {
     let _ = canisterMap.replace(p, r);
   };
 
+  public  shared({caller}) func setAdmin(admin: Principal): async (){
+    _admin := admin;
+  };
+
+  public  shared({caller}) func setUploaders(uploader: Principal, quota: Nat): async (){
+    assert(caller == _admin);
+
+    let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
+      u.uploader == uploader
+    });
+    switch(fu){
+      case(?fu){
+        _uploaders := Array.map<Uploader,Uploader>(_uploaders,func(u): Uploader{
+          if(u.uploader == uploader){
+            {
+              uploader = uploader;
+              quota = u.quota + quota;
+              files = u.files;
+            }
+          }else{
+            u
+          }
+        })
+      };
+      case(_){
+        _uploaders := Array.append([{
+             uploader = uploader;
+             quota =  quota;
+             files = [];
+        }],_uploaders);
+      }
+    }
+
+  };
   // persist chunks in bucket
-  public func putFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async () {
-    let b : Bucket = await getEmptyBucket(?fileSize);
-    let _ = await b.putChunks(fileId, chunkNum, chunkData);
+  public shared({caller}) func putFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
+    let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
+      u.uploader == caller
+    });
+
+    switch(fu){
+      case(?fu){
+
+        if(fu.quota > fu.files.size()){
+          let b : Bucket = await getEmptyBucket(?fileSize);
+          let _ = await b.putChunks(fileId, chunkNum, chunkData);
+          #ok(1)
+        }else{
+          #err("no more quota!")
+        }
+
+      };
+      case(_){
+        #err("no permission")
+      }
+    }
+
   };
 
   // save file info 
-  public func putFileInfo(fi: FileInfo) : async ?FileId {
-    let b: Bucket = await getEmptyBucket(?fi.size);
-    Debug.print("creating file info..." # debug_show(fi));
-    let fileId = await b.putFile(fi);
-    fileId
+  public shared({caller}) func putFileInfo(fi: FileInfo) : async Result.Result<FileId, Text> {
+
+   let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
+      u.uploader == caller
+    });
+
+    switch(fu){
+      case(?fu){
+
+        if(fu.quota > fu.files.size()){
+          
+          let b: Bucket = await getEmptyBucket(?fi.size);
+          Debug.print("creating file info..." # debug_show(fi));
+          let fileId = await b.putFile(fi);
+          switch(fileId){
+            case(?fileId){
+                //update uploaders
+                _uploaders := Array.map<Uploader,Uploader>(_uploaders,func(u): Uploader{
+                  if(u.uploader == caller){
+                    {
+                      uploader = u.uploader;
+                      quota = u.quota;
+                      files = Array.append<FileId>([fileId],u.files);
+                    }
+                  }else{
+                    u
+                  }
+              });
+              #ok(fileId)
+            };
+            case(_){
+              #err("no file id generated!")
+            }
+          }
+          
+        }else{
+          #err("no more quota!")
+        };
+
+      };
+      case(_){
+        #err("no permission")
+      }
+    };    
+
   };
 
   func getBucket(cid: Principal) : async ?Bucket {
