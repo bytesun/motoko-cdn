@@ -228,6 +228,10 @@ shared ({caller = owner}) actor class Container() = this {
     _admin := admin;
   };
 
+  public query func getAdmin(): async Principal{
+    _admin;
+  };
+
   public  shared({caller}) func setUploaders(uploader: Principal, quota: Nat): async (){
     assert(caller == _admin);
 
