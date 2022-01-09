@@ -108,6 +108,7 @@ shared ({caller = owner}) actor class Container() = this {
 
 
   stable var _admin = owner;
+  stable var _moderator = owner;
   stable var _uploaders : [Uploader] = []; 
 
   //State functions
@@ -232,35 +233,52 @@ shared ({caller = owner}) actor class Container() = this {
     _admin;
   };
 
-  public  shared({caller}) func setUploaders(uploader: Principal, quota: Nat): async (){
-    assert(caller == _admin);
 
-    let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
-      u.uploader == uploader
-    });
-    switch(fu){
-      case(?fu){
-        _uploaders := Array.map<Uploader,Uploader>(_uploaders,func(u): Uploader{
-          if(u.uploader == uploader){
-            {
-              uploader = uploader;
-              quota = u.quota + quota;
-              files = u.files;
+  public  shared({caller}) func setModerator(md: Principal): async (){
+    _moderator := md;
+  };
+
+  public query func getModerator(): async Principal{
+    _moderator;
+  };
+
+  public  shared({caller}) func setUploaders(uploader: Principal, quota: Nat): async Result.Result<Nat, Text>{
+    if(caller == _moderator){
+
+      let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
+        u.uploader == uploader
+      });
+      switch(fu){
+        case(?fu){
+          _uploaders := Array.map<Uploader,Uploader>(_uploaders,func(u): Uploader{
+            if(u.uploader == uploader){
+              {
+                uploader = uploader;
+                quota = u.quota + quota;
+                files = u.files;
+              }
+            }else{
+              u
             }
-          }else{
-            u
-          }
-        })
+          })
+        };
+        case(_){
+          _uploaders := Array.append([{
+              uploader = uploader;
+              quota =  quota;
+              files = [];
+          }],_uploaders);
+        }
       };
-      case(_){
-        _uploaders := Array.append([{
-             uploader = uploader;
-             quota =  quota;
-             files = [];
-        }],_uploaders);
-      }
+    #ok(1);
+    }else{
+      #err("no permission!")
     }
 
+  };
+
+  public query func getUploaders(): async [Uploader]{
+    _uploaders;
   };
   // persist chunks in bucket
   public shared({caller}) func putFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
