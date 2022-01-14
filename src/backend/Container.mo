@@ -85,6 +85,21 @@ shared ({caller = owner}) actor class Container() = this {
     bucket  : Bucket;
     var size : Nat;
   };
+
+  type FileInfoState<Text, FileInfo> = {
+    name: Text;
+    file: FileInfo;
+  };
+
+  type DataChunk<Text, Blob> = {
+    id: Text;
+    data: Blob;
+  };
+
+  type FileDataState<Text, DataChunk> = {
+    name: Text;
+    chunk: DataChunk;
+  } ;
   // canister map is a cached way to fetch canisters info
   // this will be only updated when a file is added 
 
@@ -108,8 +123,11 @@ shared ({caller = owner}) actor class Container() = this {
 
 
   stable var _admin = owner;
-  stable var _moderator = owner;
+  stable var _moderators = [owner];
   stable var _uploaders : [Uploader] = []; 
+
+
+  
 
   //State functions
   system func preupgrade() {
@@ -234,18 +252,21 @@ shared ({caller = owner}) actor class Container() = this {
   };
 
 
-  public  shared({caller}) func setModerator(md: Principal): async (){
-    _moderator := md;
+  public  shared({caller}) func addModerator(md: Principal): async (){
+    _moderators := Array.append<Principal>([md],_moderators);
   };
 
-  public query func getModerator(): async Principal{
-    _moderator;
+  public query func getModerators(): async [Principal]{
+    _moderators;
   };
 
   public  shared({caller}) func setUploaders(uploader: Principal, quota: Nat): async Result.Result<Nat, Text>{
-    if(caller == _moderator){
-
-      let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
+    let fmod = Array.find(_moderators,func(m: Principal): Bool{
+      m == caller
+    });
+    switch(fmod){
+      case(?fmod){
+        let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
         u.uploader == uploader
       });
       switch(fu){
@@ -271,9 +292,13 @@ shared ({caller = owner}) actor class Container() = this {
         }
       };
     #ok(1);
-    }else{
-      #err("no permission!")
+      };
+      case(_){
+        #err("no permission!")
+      }
+
     }
+   
 
   };
 
@@ -282,26 +307,12 @@ shared ({caller = owner}) actor class Container() = this {
   };
   // persist chunks in bucket
   public shared({caller}) func putFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
-    let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
-      u.uploader == caller
-    });
 
-    switch(fu){
-      case(?fu){
 
-        if(fu.quota > fu.files.size()){
           let b : Bucket = await getEmptyBucket(?fileSize);
           let _ = await b.putChunks(fileId, chunkNum, chunkData);
           #ok(1)
-        }else{
-          #err("no more quota!")
-        }
-
-      };
-      case(_){
-        #err("no permission")
-      }
-    }
+       
 
   };
 
@@ -353,6 +364,8 @@ shared ({caller = owner}) actor class Container() = this {
 
   };
 
+  
+
   func getBucket(cid: Principal) : async ?Bucket {
     let cs: ?(?CanisterState<Bucket, Nat>) =  Array.find<?CanisterState<Bucket, Nat>>(Array.freeze(canisters), 
         func(cs: ?CanisterState<Bucket, Nat>) : Bool {
@@ -392,22 +405,22 @@ shared ({caller = owner}) actor class Container() = this {
   };
 
   // get a list of files from all canisters
-  public func getAllFiles() : async [FileData] {
-    let buff = Buffer.Buffer<FileData>(0);
-    for (i in Iter.range(0, canisters.size() - 1)) {
-      let c : ?CanisterState<Bucket, Nat> = canisters[i];
-      switch c { 
-        case null { };
-        case (?c) {
-          let bi = await c.bucket.getInfo();
-          for (j in Iter.range(0, bi.size() - 1)) {
-            buff.add(bi[j])
-          };
-        };
-      }
-    };
-    buff.toArray()
-  };  
+  // public func getAllFiles() : async [FileData] {
+  //   let buff = Buffer.Buffer<FileData>(0);
+  //   for (i in Iter.range(0, canisters.size() - 1)) {
+  //     let c : ?CanisterState<Bucket, Nat> = canisters[i];
+  //     switch c { 
+  //       case null { };
+  //       case (?c) {
+  //         let bi = await c.bucket.getInfo();
+  //         for (j in Iter.range(0, bi.size() - 1)) {
+  //           buff.add(bi[j])
+  //         };
+  //       };
+  //     }
+  //   };
+  //   buff.toArray()
+  // };  
 
   public shared({caller = caller}) func wallet_receive() : async () {
     ignore Cycles.accept(Cycles.available());
