@@ -4,13 +4,16 @@ import Debug "mo:base/Debug";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Nat "mo:base/Nat";
-import Buckets "Buckets";
-import Types "./Types";
 import HashMap "mo:base/HashMap";
 import Iter "mo:base/Iter";
 import Blob "mo:base/Blob";
 import Buffer "mo:base/Buffer";
+import List "mo:base/List";
 import Result "mo:base/Result";
+
+
+import Buckets "Buckets";
+import Types "./Types";
 
  
 
@@ -108,6 +111,13 @@ shared ({caller = owner}) actor class Container() = this {
 
 
   stable var canisters : [var ?CanisterState<Bucket, Nat>] = Array.init(10, null);
+
+  //Sun: new one
+  stable var _bucketState: [Bucket]  = [];
+  var _buckets = Buffer.Buffer<Bucket>(10);
+
+
+
   // this is the number I've found to work well in my tests
   // until canister updates slow down 
   //From Claudio:  Motoko has a new compacting gc that you can select to access more than 2 GB, but it might not let you
@@ -127,16 +137,32 @@ shared ({caller = owner}) actor class Container() = this {
   stable var _uploaders : [Uploader] = []; 
 
 
-  
-
   //State functions
   system func preupgrade() {
     _canisterMapState := Iter.toArray(canisterMap.entries());
+    _bucketState := _buckets.toArray();
    
   };
   system func postupgrade() {
     _canisterMapState := [];
-  
+
+    // for(x in canisters.vals()){
+    //   switch(x){
+    //     case(?x){
+    //       _buckets.add(x.bucket);
+    //     };
+    //     case(_){
+
+    //     }
+    //   }
+      
+    // };
+
+
+    for(b in _bucketState.vals()){
+      _buckets.add(b);
+    };
+    _bucketState:=[];
   };
   // dynamically install a new Bucket
   func newEmptyBucket(): async Bucket {
@@ -147,12 +173,15 @@ shared ({caller = owner}) actor class Container() = this {
     Debug.print("new canister principal is " # debug_show(Principal.toText(Principal.fromActor(b))) );
     Debug.print("initial size is " # debug_show(s));
     let _ = canisterMap.put(Principal.fromActor(b), threshold);
-     var v : CanisterState<Bucket, Nat> = {
-         bucket = b;
-         var size = s;
-    };
-    canisters[1] := ?v;
-  
+    //  var v : CanisterState<Bucket, Nat> = {
+    //      bucket = b;
+    //      var size = s;
+    // };
+    
+    // canisters[canisters.size() + 1] := ?v;
+    _buckets.add(b);
+    //_buckets := Array.append<CanisterState<Bucket, Nat>>([v],_buckets);
+    // canisters := Array.append<?CanisterState<Bucket, Nat>>([?v],canisters);
     b;
   };
 
@@ -174,10 +203,17 @@ shared ({caller = owner}) actor class Container() = this {
             };
           };
       });
+
     let eb : ?Bucket = do ? {
         let c = cs!;
         let nb: ?Bucket = switch (c) {
-          case (?c) { ?(c.bucket) };
+          case (?c) { 
+
+            //Sun: reserve the new size request
+            let _ = _updateBucketStatus(Principal.fromActor(c.bucket),fs);
+
+            ?(c.bucket) 
+            };
           case _ { null };
         };
 
@@ -189,6 +225,59 @@ shared ({caller = owner}) actor class Container() = this {
     };
     c
   };
+
+
+  func getAvailableBucket(s : ?Nat): async Bucket {
+    let fs: Nat = switch (s) {
+      case null { 0 };
+      case (?s) { s }
+    };
+
+    let bs = _buckets.toArray();
+    let ab = Array.find<Bucket>(bs, func(b: Bucket): Bool{
+
+      let space = canisterMap.get(Principal.fromActor(b));
+      switch(space){
+        case(?space){
+          if(space > fs){
+            let _ = updateSize(Principal.fromActor(b),fs);//reserve space
+            return true;
+          }else{ return false; }
+        };
+        case(_){
+          false
+        };
+      }
+
+      
+    });
+
+    switch(ab){
+      case(?ab){
+        ab
+      };
+      case(_){
+        await newEmptyBucket()
+      };
+    }
+  };
+
+
+  private func _updateBucketStatus(id: Principal, incSize: Nat ): () {
+    for (i in Iter.range(0, canisters.size() - 1)) {
+      let c : ?CanisterState<Bucket, Nat> = canisters[i];
+      switch c { 
+        case null { };
+        case (?c) {
+          if(id == Principal.fromActor(c.bucket)){
+            c.size := c.size + incSize;
+          }
+          
+        };
+      }
+    };
+  };
+
   // canister memory is set to 4GB and compute allocation to 5 as the purpose 
   // of this canisters is mostly storage
   // set canister owners to the wallet canister and the container canister ie: this
@@ -228,12 +317,6 @@ shared ({caller = owner}) actor class Container() = this {
     };
   };
 
-  // get canisters status
-  // this is cached until a new upload is made
-  public query func getStatus() : async [(Principal, Nat)] {
-    Iter.toArray<(Principal, Nat)>(canisterMap.entries());
-  };
-
   // update hashmap 
   func updateSize(p: Principal, s: Nat) : () {
     var r = 0;
@@ -242,6 +325,7 @@ shared ({caller = owner}) actor class Container() = this {
     };
     let _ = canisterMap.replace(p, r);
   };
+
 
   public  shared({caller}) func setAdmin(admin: Principal): async (){
     _admin := admin;
@@ -305,6 +389,7 @@ shared ({caller = owner}) actor class Container() = this {
   public query func getUploaders(): async [Uploader]{
     _uploaders;
   };
+
   // persist chunks in bucket
   public shared({caller}) func putFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
 
@@ -313,6 +398,27 @@ shared ({caller = owner}) actor class Container() = this {
           let _ = await b.putChunks(fileId, chunkNum, chunkData);
           #ok(1)
        
+
+  };
+  // persist chunks in bucket
+  public shared({caller}) func saveFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
+
+
+          // let b : Bucket = await getEmptyBucket(?fileSize);
+           let cid = Iter.toArray(Text.tokens(fileId, #text("_")))[0];
+
+
+
+                let r =  do ? {
+                    let b : Bucket = (await _getBucket(Principal.fromText(cid)))!;
+          
+                    let _ = await b.putChunks(fileId, chunkNum, chunkData);
+                    
+                    ?1;
+                  };  
+                  
+                  #ok(1)
+            
 
   };
 
@@ -328,12 +434,19 @@ shared ({caller = owner}) actor class Container() = this {
 
         if(fu.quota > fu.files.size()){
           
-          let b: Bucket = await getEmptyBucket(?fi.size);
+          // let b: Bucket = await getEmptyBucket(?fi.size);
+          let b: Bucket = await getAvailableBucket(?fi.size);
           Debug.print("creating file info..." # debug_show(fi));
           let fileId = await b.putFile(fi);
+          
+          
+
           switch(fileId){
             case(?fileId){
+
+               
                 //update uploaders
+                
                 _uploaders := Array.map<Uploader,Uploader>(_uploaders,func(u): Uploader{
                   if(u.uploader == caller){
                     {
@@ -388,21 +501,124 @@ shared ({caller = owner}) actor class Container() = this {
     };
   };
 
+  func _getBucket(cid: Principal): async ?Bucket{
+    let abuckets = _buckets.toArray();
+    Array.find<Bucket>(abuckets,func(b: Bucket): Bool{
+      cid == Principal.fromActor(b)
+    });
+  };
+
+  // // get file chunk 
+  // public func getFileChunk(fileId : FileId, chunkNum : Nat) : async ?Blob {
+  //   let cid = Iter.toArray(Text.tokens(fileId, #text("_")))[0];
+  //   do ? {
+  //     let b : Bucket = (await _getBucket(Principal.fromText(cid)))!;
+  //     return await b.getChunks(fileId, chunkNum);
+  //   }   
+  // };
+
+  // // get file info
+  // public func getFileInfo(fileId : FileId) : async ?FileData {
+  //   let cid = Iter.toArray(Text.tokens(fileId, #text("_")))[0];
+  //   do ? {
+  //     let b : Bucket = (await _getBucket(Principal.fromText(cid)))!;
+  //     return await b.getFileInfo(fileId);
+  //   }   
+  // };
+
+
+
   // get file chunk 
-  public func getFileChunk(fileId : FileId, chunkNum : Nat, cid: Principal) : async ?Blob {
-    do ? {
-      let b : Bucket = (await getBucket(cid))!;
-      return await b.getChunks(fileId, chunkNum);
-    }   
+  public func fetchFileChunk(fileId : FileId, chunkNum : Nat) : async ?Blob {
+    let cid = Iter.toArray(Text.tokens(fileId, #text("_")))[0];
+
+        do ? {
+          let b : Bucket = (await _getBucket(Principal.fromText(cid)))!;
+          return await b.getChunks(fileId, chunkNum);
+        }  ; 
+
+    
+  };
+
+  public func fetchFileChunks(fileId: FileId) : async ?Blob{
+     let cid = Iter.toArray(Text.tokens(fileId, #text("_")))[0];
+     
+
+        do ? {
+          let b : Bucket = (await _getBucket(Principal.fromText(cid)))!;
+          let f = await b.getFileInfo(fileId);
+          switch(f){
+            case(?f){
+              var cs = Buffer.Buffer<Blob>(f.chunkCount);
+              for (j in Iter.range(0, f.chunkCount)) {
+                let chunk = await b.getChunks(fileId, j);
+                switch(chunk){
+                  case(?chunk){
+                    cs.add(chunk);
+                  };
+                  case(_){
+                    
+                  };
+                };
+                
+              };
+              mergeChunks(cs.toArray());
+            };
+            case(_){
+              Blob.fromArray([])
+            };
+          }
+         
+        }; 
+
+  };
+  
+  private func mergeChunks (chunks : [Blob]) : Blob {
+      Blob.fromArray(
+          Array.foldLeft<Blob, [Nat8]>(chunks, [], func (a : [Nat8], b : Blob) {
+              Array.append(a, Blob.toArray(b));
+          })
+      );
   };
 
   // get file info
-  public func getFileInfo(fileId : FileId, cid: Principal) : async ?FileData {
-    do ? {
-      let b : Bucket = (await getBucket(cid))!;
-      return await b.getFileInfo(fileId);
-    }   
+  public  func fetchFileInfo(fileId : FileId) : async ?FileData {
+        let cid = Iter.toArray(Text.tokens(fileId, #text("_")))[0];
+
+        do ? {
+          let b : Bucket = (await _getBucket(Principal.fromText(cid)))!;
+          return await b.getFileInfo(fileId);
+        }   
+     
+    
   };
+
+
+
+  // get canisters status
+  // this is cached until a new upload is made
+  public query func getStatus() : async [(Principal, Nat)] {
+    Iter.toArray<(Principal, Nat)>(canisterMap.entries());
+  };
+
+  // public query func getCycles() : async [(Principal, Nat)] {
+  //   let bs = _buckets.toArray();
+  //   var cs = Buffer.Buffer<(Principal, Nat)>(1+bs.size());
+    
+  //   cs.add((Principal.fromActor(this),Cycles.balance()));
+
+  //   for(b in bs.vals()){
+  //     let balance =  b.wallet_balance();
+  //     cs.add(Principal.fromActor(b),balance);
+  //   };
+
+  //   cs.toArray();
+    
+  // };
+
+  // public query func getBuckets(): async [Bucket]{
+  //   _buckets.toArray();
+  // };
 
   // get a list of files from all canisters
   // public func getAllFiles() : async [FileData] {
@@ -425,6 +641,13 @@ shared ({caller = owner}) actor class Container() = this {
   public shared({caller = caller}) func wallet_receive() : async () {
     ignore Cycles.accept(Cycles.available());
   };
+
+  
+  public query func availableCycles() : async Nat {
+    return Cycles.balance();
+  };
+
+
 
 };
 

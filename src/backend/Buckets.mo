@@ -9,6 +9,7 @@ import Nat64 "mo:base/Nat64";
 import Debug "mo:base/Debug";
 import Prim "mo:prim";
 import Buffer "mo:base/Buffer";
+
 import Cycles "mo:base/ExperimentalCycles";
 
 actor class Bucket () = this {
@@ -22,10 +23,7 @@ actor class Bucket () = this {
   var state = Types.empty();
   let limit = 20_000_000_000_000;
 
-  public func getSize(): async Nat {
-    Debug.print("canister balance: " # Nat.toText(Cycles.balance()));
-    Prim.rts_memory_size();
-  };
+
   // consume 1 byte of entrypy
   func getrByte(f : Random.Finite) : ? Nat8 {
     do ? {
@@ -83,7 +81,8 @@ actor class Bucket () = this {
   public func putFile(fi: FileInfo) : async ?FileId {
     do ? {
       // append 2 bytes of entropy to the name
-      let fileId = await generateRandom(fi.name);
+      var fileId = await generateRandom(fi.name);
+      fileId := Principal.toText(Principal.fromActor(this)) # "_" # fileId;
       createFileInfo(fileId, fi)!;
     }
   };
@@ -146,6 +145,9 @@ actor class Bucket () = this {
 
   public func wallet_balance() : async Nat {
     return Cycles.balance();
+  };
+  public func getSize(): async Nat {
+    Prim.rts_memory_size();
   };
 
 };
