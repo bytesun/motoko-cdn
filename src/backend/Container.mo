@@ -362,31 +362,31 @@ shared ({caller = owner}) actor class Container() = this {
     switch(fmod){
       case(?fmod){
         let fu = Array.find<Uploader>(_uploaders, func(u:Uploader ): Bool{
-        u.uploader == uploader
-      });
-      switch(fu){
-        case(?fu){
-          _uploaders := Array.map<Uploader,Uploader>(_uploaders,func(u): Uploader{
-            if(u.uploader == uploader){
-              {
-                uploader = uploader;
-                quota = u.quota + quota;
-                files = u.files;
-              }
-            }else{
-              u
+           u.uploader == uploader
+         });
+          switch(fu){
+            case(?fu){
+              _uploaders := Array.map<Uploader,Uploader>(_uploaders,func(u): Uploader{
+                if(u.uploader == uploader){
+                  {
+                    uploader = uploader;
+                    quota = u.quota + quota;
+                    files = u.files;
+                  }
+                }else{
+                  u
+                }
+              })
+            };
+            case(_){
+              _uploaders := Array.append([{
+                  uploader = uploader;
+                  quota =  quota;
+                  files = [];
+              }],_uploaders);
             }
-          })
-        };
-        case(_){
-          _uploaders := Array.append([{
-              uploader = uploader;
-              quota =  quota;
-              files = [];
-          }],_uploaders);
-        }
-      };
-    #ok(1);
+          };
+        #ok(1);
       };
       case(_){
         #err("no permission!")
@@ -397,8 +397,44 @@ shared ({caller = owner}) actor class Container() = this {
 
   };
 
-  public query func getUploaders(): async [Uploader]{
+  public query({caller}) func getUploaders(): async [Uploader]{
+    assert(caller == _admin);
     _uploaders;
+  };
+
+  public query({caller}) func getFileIds(): async [FileId]{
+    let uploader = Array.find<Uploader>(_uploaders, func(u: Uploader):Bool{
+      u.uploader == caller
+    });
+
+    switch(uploader){
+      case(?uploader){
+        uploader.files;
+      };
+      case(_){
+        []
+      };
+    };
+  };
+
+  public query({caller}) func getQuota(): async {used: Nat; quota: Nat;}{
+    let up = Array.find<Uploader>(_uploaders, func(u: Uploader):Bool{
+      u.uploader == caller
+    });
+    switch(up){
+      case(?up){
+        {
+          used = up.files.size();
+          quota = up.quota;
+        }
+      };
+      case(_){
+        {
+          used = 0;
+          quota = 0;
+        }
+      };
+    }
   };
 
   // persist chunks in bucket
