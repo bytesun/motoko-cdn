@@ -327,8 +327,14 @@ shared ({caller = owner}) actor class Container() = this {
   };
 
 
-  public  shared({caller}) func setAdmin(admin: Principal): async (){
-    _admin := admin;
+  public  shared({caller}) func setAdmin(admin: Principal): async Result.Result<Nat,Text>{
+    if(admin == caller){
+      _admin := admin;
+      #ok(1)
+    }else{
+      #err("no permission")
+    };
+    
   };
 
   public query func getAdmin(): async Principal{
@@ -336,8 +342,13 @@ shared ({caller = owner}) actor class Container() = this {
   };
 
 
-  public  shared({caller}) func addModerator(md: Principal): async (){
-    _moderators := Array.append<Principal>([md],_moderators);
+  public  shared({caller}) func addModerator(md: Principal): async Result.Result<Nat, Text>{
+    if(caller == _admin){
+       _moderators := Array.append<Principal>([md],_moderators);
+       #ok(1)
+    }else{
+      #err("no permission")
+    }
   };
 
   public query func getModerators(): async [Principal]{
