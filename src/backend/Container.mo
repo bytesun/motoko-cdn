@@ -1,3 +1,4 @@
+import Prim "mo:prim";
 import Array "mo:base/Array";
 import Cycles "mo:base/ExperimentalCycles";
 import Debug "mo:base/Debug";
@@ -694,7 +695,17 @@ shared ({caller = owner}) actor class Container() = this {
     return Cycles.balance();
   };
 
-
+public query func getSystemData(): async {
+       cycles: Nat;
+      memory: Nat;
+      heap: Nat;
+   }{
+    return {
+      cycles = Cycles.balance();
+      memory = Prim.rts_memory_size();
+      heap = Prim.rts_heap_size();
+    };
+  } ;
 
 };
 
