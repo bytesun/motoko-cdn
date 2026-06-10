@@ -22,7 +22,7 @@ import Types "./Types";
 // Use of IC management canister with specified Principal "aaaaa-aa" to update the newly 
 // created canisters permissions and settings 
 //  https://sdk.dfinity.org/docs/interface-spec/index.html#ic-management-canister
-shared ({caller = owner}) actor class Container() = this {
+shared ({caller = owner}) persistent actor class Container() = this {
 
  public type canister_id = Principal;
   public type canister_settings = {
@@ -108,14 +108,14 @@ shared ({caller = owner}) actor class Container() = this {
   // this will be only updated when a file is added 
 
   stable var _canisterMapState : [(Principal, Nat)] = [];
-  private let canisterMap : HashMap.HashMap<Principal, Nat> = HashMap.fromIter(_canisterMapState.vals(), 100, Principal.equal, Principal.hash);
+  private transient let canisterMap : HashMap.HashMap<Principal, Nat> = HashMap.fromIter(_canisterMapState.vals(), 100, Principal.equal, Principal.hash);
 
 
   stable var canisters : [var ?CanisterState<Bucket, Nat>] = Array.init(10, null);
 
   //Sun: new one
   stable var _bucketState: [Bucket]  = [];
-  var _buckets = Buffer.Buffer<Bucket>(10);
+  transient var _buckets = Buffer.Buffer<Bucket>(10);
 
 
 
@@ -707,6 +707,21 @@ public query func getSystemData(): async {
     };
   } ;
 
+
+  public shared(msg) func updateCanisterController(canister: Principal, controller: Principal) : async () {
+    Debug.print("balance before: " # Nat.toText(Cycles.balance()));
+    // Cycles.add(Cycles.balance()/2);
+   
+    await (IC.update_settings( {
+       canister_id = canister; 
+       settings = { 
+         controllers = ?[owner, Principal.fromActor(this), controller];
+         compute_allocation = null;
+        //  memory_allocation = ?4_294_967_296; // 4GB
+         memory_allocation = null; // 4GB
+         freezing_threshold = ?31_540_000} })
+    );
+  };
 };
 
   

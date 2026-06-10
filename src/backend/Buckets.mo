@@ -12,7 +12,7 @@ import Buffer "mo:base/Buffer";
 
 import Cycles "mo:base/ExperimentalCycles";
 
-actor class Bucket () = this {
+persistent actor class Bucket () = this {
 
   type FileId = Types.FileId;
   type FileInfo = Types.FileInfo;
@@ -20,8 +20,8 @@ actor class Bucket () = this {
   type ChunkId = Types.ChunkId;
   type State = Types.State;
 
-  var state = Types.empty();
-  let limit = 20_000_000_000_000;
+  transient var state = Types.empty();
+  transient let limit = 20_000_000_000_000;
 
 
   // consume 1 byte of entrypy
