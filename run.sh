@@ -17,12 +17,3 @@ echo == Install.
 echo
 
 dfx canister install --all
-
-
-echo
-echo == Deploy.
-echo
-
-# dfx deploy
-
-yarn start

@@ -9,7 +9,6 @@ import HashMap "mo:base/HashMap";
 import Iter "mo:base/Iter";
 import Blob "mo:base/Blob";
 import Buffer "mo:base/Buffer";
-import List "mo:base/List";
 import Result "mo:base/Result";
 
 
@@ -107,14 +106,14 @@ shared ({caller = owner}) persistent actor class Container() = this {
   // canister map is a cached way to fetch canisters info
   // this will be only updated when a file is added 
 
-  stable var _canisterMapState : [(Principal, Nat)] = [];
+  var _canisterMapState : [(Principal, Nat)] = [];
   private transient let canisterMap : HashMap.HashMap<Principal, Nat> = HashMap.fromIter(_canisterMapState.vals(), 100, Principal.equal, Principal.hash);
 
 
-  stable var canisters : [var ?CanisterState<Bucket, Nat>] = Array.init(10, null);
+  var canisters : [var ?CanisterState<Bucket, Nat>] = Array.init(10, null);
 
   //Sun: new one
-  stable var _bucketState: [Bucket]  = [];
+  var _bucketState: [Bucket]  = [];
   transient var _buckets = Buffer.Buffer<Bucket>(10);
 
 
@@ -133,15 +132,15 @@ shared ({caller = owner}) persistent actor class Container() = this {
   private let cycleShare = 1_000_000_000_000;
 
 
-  stable var _admin = owner;
-  stable var _moderators = [owner];
-  stable var _uploaders : [Uploader] = []; 
+  var _admin = owner;
+  var _moderators = [owner];
+  var _uploaders : [Uploader] = [];
 
 
   //State functions
   system func preupgrade() {
     _canisterMapState := Iter.toArray(canisterMap.entries());
-    _bucketState := _buckets.toArray();
+    _bucketState := Buffer.toArray(_buckets);
    
   };
   system func postupgrade() {
@@ -167,8 +166,7 @@ shared ({caller = owner}) persistent actor class Container() = this {
   };
   // dynamically install a new Bucket
   func newEmptyBucket(): async Bucket {
-    Cycles.add(cycleShare);
-    let b = await Buckets.Bucket();
+    let b = await (with cycles = cycleShare) Buckets.Bucket();
     let _ = await updateCanister(b); // update canister permissions and settings
     let s = await b.getSize();
     Debug.print("new canister principal is " # debug_show(Principal.toText(Principal.fromActor(b))) );
@@ -234,7 +232,7 @@ shared ({caller = owner}) persistent actor class Container() = this {
       case (?s) { s }
     };
 
-    let bs = _buckets.toArray();
+    let bs = Buffer.toArray(_buckets);
     let ab = Array.find<Bucket>(bs, func(b: Bucket): Bool{
 
       let space = canisterMap.get(Principal.fromActor(b));
@@ -308,7 +306,6 @@ shared ({caller = owner}) persistent actor class Container() = this {
         case null { };
         case (?c) {
           let s = await c.bucket.getSize();
-          let cid = { canister_id = Principal.fromActor(c.bucket)};
           // Debug.print("IC status..." # debug_show(await IC.canister_status(cid)));
           Debug.print("canister with id: " # debug_show(Principal.toText(Principal.fromActor(c.bucket))) # " size is " # debug_show(s));
           c.size := s;
@@ -439,7 +436,7 @@ shared ({caller = owner}) persistent actor class Container() = this {
   };
 
   // persist chunks in bucket
-  public shared({caller}) func putFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
+  public shared func putFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
 
 
           let b : Bucket = await getEmptyBucket(?fileSize);
@@ -449,7 +446,7 @@ shared ({caller = owner}) persistent actor class Container() = this {
 
   };
   // persist chunks in bucket
-  public shared({caller}) func saveFileChunks(fileId: FileId, chunkNum : Nat, fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
+  public shared func saveFileChunks(fileId: FileId, chunkNum : Nat, _fileSize: Nat, chunkData : Blob) : async Result.Result<Nat, Text> {
 
 
           // let b : Bucket = await getEmptyBucket(?fileSize);
@@ -457,7 +454,7 @@ shared ({caller = owner}) persistent actor class Container() = this {
 
 
 
-                let r =  do ? {
+                let _ = do ? {
                     let b : Bucket = (await _getBucket(Principal.fromText(cid)))!;
           
                     let _ = await b.putChunks(fileId, chunkNum, chunkData);
@@ -525,32 +522,10 @@ shared ({caller = owner}) persistent actor class Container() = this {
 
   };
 
-  
 
-  func getBucket(cid: Principal) : async ?Bucket {
-    let cs: ?(?CanisterState<Bucket, Nat>) =  Array.find<?CanisterState<Bucket, Nat>>(Array.freeze(canisters), 
-        func(cs: ?CanisterState<Bucket, Nat>) : Bool {
-          switch (cs) {
-            case null { false };
-            case (?cs) {
-              Debug.print("found canister with principal..." # debug_show(Principal.toText(Principal.fromActor(cs.bucket))));
-              Principal.equal(Principal.fromActor(cs.bucket), cid)
-            };
-          };
-      });
-      let eb : ?Bucket = do ? {
-        let c = cs!;
-        let nb: ?Bucket = switch (c) {
-          case (?c) { ?(c.bucket) };
-          case _ { null };
-        };
-
-        nb!;
-    };
-  };
 
   func _getBucket(cid: Principal): async ?Bucket{
-    let abuckets = _buckets.toArray();
+    let abuckets = Buffer.toArray(_buckets);
     Array.find<Bucket>(abuckets,func(b: Bucket): Bool{
       cid == Principal.fromActor(b)
     });
@@ -610,7 +585,7 @@ shared ({caller = owner}) persistent actor class Container() = this {
                 };
                 
               };
-              mergeChunks(cs.toArray());
+              mergeChunks(Buffer.toArray(cs));
             };
             case(_){
               Blob.fromArray([])
@@ -686,8 +661,8 @@ shared ({caller = owner}) persistent actor class Container() = this {
   //   buff.toArray()
   // };  
 
-  public shared({caller = caller}) func wallet_receive() : async () {
-    ignore Cycles.accept(Cycles.available());
+  public shared func wallet_receive() : async () {
+    ignore Cycles.accept<system>(Cycles.available());
   };
 
   
@@ -708,7 +683,7 @@ public query func getSystemData(): async {
   } ;
 
 
-  public shared(msg) func updateCanisterController(canister: Principal, controller: Principal) : async () {
+  public shared(_msg) func updateCanisterController(canister: Principal, controller: Principal) : async () {
     Debug.print("balance before: " # Nat.toText(Cycles.balance()));
     // Cycles.add(Cycles.balance()/2);
    
@@ -723,5 +698,3 @@ public query func getSystemData(): async {
     );
   };
 };
-
-  

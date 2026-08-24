@@ -12,9 +12,6 @@
   
   <h3 align="center">A simple storage auto-scaling solution across multiple canisters. Ie: mini-bigmap</h3>
 
-  <p align="center">
-    <a href="https://b2r3f-wiaaa-aaaae-aaaxa-cai.ic0.app/">View Demo</a>
-  </p>
 </p>
 
 ## Motivation
@@ -34,11 +31,9 @@ https://sdk.dfinity.org/docs/interface-spec/index.html#ic-management-canister
 
 Using the IC management canister I can update the new canister settings `compute_allocation = ?5; memory_allocation = ?4294967296;` and the controllers to the wallet canister and the container canister. 
 
-Random IDs: I generate a random id in js and then using Random library https://sdk.dfinity.org/docs/base-libraries/random I use 2 bytes of entropy and append to the id sent from front-end. This way I use a blob of entropy for 16 IDs. 
+Random IDs: the backend uses the Random library to append 2 bytes of entropy to a client-provided ID. This way it uses one blob of entropy for 16 IDs.
 
-Frontend: you can upload any type of file from this category: `jpeg, gif, jpg, png, svg, avi, aac, mp4, wav, mp3` but you can update the front-end `getFileExtension` to allow/remove types. 
-
-Files are split in chunks of 500Kb and uploaded into an available bucket. 
+Clients can split files into chunks and upload them into an available bucket through the backend canister API.
 
 Main characteristics:
 * create canisters dynamically and keep track of them in a container
@@ -48,7 +43,6 @@ Main characteristics:
 ### Built With
 
 * [Motoko](https://sdk.dfinity.org/docs/quickstart/quickstart-intro.html)
-* [ReactJS](https://reactjs.org/)
 
 <!-- GETTING STARTED -->
 ## Getting Started
@@ -62,15 +56,11 @@ To get a local copy up and running follow these simple example steps.
    ```sh
    git clone https://github.com/gabrielnic/motoko-cdn
    ```
-2. Install NPM packages
-   ```sh
-   yarn
-   ```
-3. Start dfx
+2. Start dfx
    ```sh
    dfx start --clean
    ```
-4. Deploy
+3. Deploy
    ```sh
    dfx deploy
    ```
@@ -78,12 +68,8 @@ To get a local copy up and running follow these simple example steps.
 
 <!-- USAGE EXAMPLES -->
 ## Usage
-Copy front-end canister id from .dfx/local/canister_ids.json and replace in the url below
- 
 
-Navigate to http://<frontend_canister_id>.localhost:8000/
-
-![Imgur Image](https://i.imgur.com/OGeUlz4.png)
+Interact with the deployed `backend` canister through its Candid interface or from your own client.
 
 <!-- ROADMAP -->
 ## Roadmap
